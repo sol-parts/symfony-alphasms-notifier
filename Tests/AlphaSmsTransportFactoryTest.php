@@ -1,9 +1,9 @@
 <?php
 
 /*
- * This file is part of the Sol.parts package.
+ * This file is part of SOLPARTS
  *
- * (c) Andrii Didenko <mail@sol.parts>
+ * (c) SOLPARTS LLC (EDRPOU 46143031) <mail@sol.parts>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.

@@ -45,6 +45,34 @@ dump($balance);
 // '125.50 UAH'
 ```
 
+### Checking a delivery status
+
+Pass the client-side message id — the one you set through `AlphaSmsOptions::id()`
+or the one the transport generated and returned as the sent message id. The
+gateway-side `msg_id` is not accepted here and yields a "Message not found"
+error.
+
+```php
+$status = $transport->status($sentMessage->getMessageId());
+
+dump($status);
+// [
+//     'id' => '175743824636625',
+//     'msg_id' => '1419790613',
+//     'type' => 'sms',
+//     'status' => 'DELIVERED',
+//     'updated' => '2024-01-31T12:34:00+02:00',
+// ]
+```
+
+Only `DELIVERED`, `READ`, `REPLIED` and `PARTIALLY DELIVERED` mean the message
+reached the recipient. Every other value — `ACCEPTED` included — is either
+intermediate or a failure: a message sitting in `ACCEPTED` long after `updated`
+has not been delivered.
+
+Polling is meant for one-off diagnostics. To track delivery continuously, set
+the `hook` option and let the gateway push status changes to your webhook.
+
 ## Symfony Full Stack Framework
 
 Add the AlphaSMS DSN to your environment:
@@ -132,11 +160,15 @@ To try Viber first and fall back to SMS when delivery is unavailable, enable
 ```php
 $options = (new AlphaSmsOptions())
     ->viber_if_possible(true)
+    ->viber_text('Ваше замовлення готове до видачі. Дякуємо за покупку!')
     ->viber_image('https://example.com/images/message.png')
     ->viber_link('https://example.com/orders/100500')
     ->viber_button('View order')
     ->viber_lifetime(172800);
 ```
+
+The optional `viber_text()` sets a separate Viber body. When omitted or blank,
+the SMS body is used. SMS fallback always keeps the original SMS body.
 
 The transport derives the AlphaSMS `viber_type` from the options actually set,
 so a plain text Viber message is a single call:

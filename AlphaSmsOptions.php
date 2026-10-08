@@ -1,9 +1,9 @@
 <?php
 
 /*
- * This file is part of the Sol.parts package.
+ * This file is part of SOLPARTS
  *
- * (c) Andrii Didenko <mail@sol.parts>
+ * (c) SOLPARTS LLC (EDRPOU 46143031) <mail@sol.parts>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -40,6 +40,18 @@ final class AlphaSmsOptions implements MessageOptionsInterface
     public function viber_if_possible(bool $state): static
     {
         $this->options['viber_if_possible'] = $state;
+
+        return $this;
+    }
+
+    /**
+     * Окремий текст Viber. Порожнє значення залишає текст SMS.
+     *
+     * @return $this
+     */
+    public function viber_text(string $text): static
+    {
+        $this->options['viber_text'] = '' !== \trim($text) ? $text : null;
 
         return $this;
     }

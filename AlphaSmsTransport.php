@@ -1,9 +1,9 @@
 <?php
 
 /*
- * This file is part of the Sol.parts package.
+ * This file is part of SOLPARTS
  *
- * (c) Andrii Didenko <mail@sol.parts>
+ * (c) SOLPARTS LLC (EDRPOU 46143031) <mail@sol.parts>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -96,6 +96,57 @@ final class AlphaSmsTransport extends AbstractTransport
         return \trim(\sprintf('%s %s', $amount, $currency));
     }
 
+    /**
+     * Delivery status of an already sent message.
+     *
+     * The payload carries `id`, `msg_id`, `type` (sms, viber, rcs), `status`
+     * and `updated`. Only DELIVERED, READ, REPLIED and PARTIALLY DELIVERED
+     * mean the message reached the recipient — ACCEPTED and the rest are
+     * intermediate states or failures, never "unknown".
+     *
+     * @param int|string $id client-side message id — the `id` option or the
+     *                       sent message id, NOT the gateway-side `msg_id`
+     *
+     * @return array<string, mixed>
+     *
+     * @see https://docs.alphasms.ua/api/json/message_status/
+     */
+    public function status(int|string $id): array
+    {
+        $response = $this->httpClient()->request('POST', $this->apiEndpoint(), [
+            'json' => [
+                'auth' => $this->authKey,
+                'data' => [[
+                    'type' => 'status',
+                    'id' => $id,
+                ]],
+            ],
+        ]);
+
+        try {
+            $statusCode = $response->getStatusCode();
+            $info = $response->toArray(false);
+        } catch (\Exception|\Error $e) {
+            throw new TransportException('AlphaSms API request execution error.', $response, 0, $e);
+        }
+
+        $item = $info['data'][0] ?? [];
+        $payload = $item['data'] ?? null;
+
+        // An unknown id is reported as a per-item failure inside an otherwise
+        // successful envelope, so the outer flags alone would pass it through
+        // as a valid lookup with an empty payload.
+        if (200 !== $statusCode
+            || empty($info['success']) || !empty($info['error'])
+            || empty($item['success']) || !empty($item['error'])
+            || !\is_array($payload)
+        ) {
+            throw new TransportException(\sprintf('Unable to fetch the AlphaSms message status: "%s".', $this->formatApiError($info)), $response);
+        }
+
+        return $payload;
+    }
+
     protected function doSend(MessageInterface $message): SentMessage
     {
         if (!$message instanceof SmsMessage) {
@@ -119,7 +170,7 @@ final class AlphaSmsTransport extends AbstractTransport
                 'type' => 'viber+sms',
                 'viber_type' => $this->viberType($options),
                 'viber_signature' => $from,
-                'viber_message' => $message->getSubject(),
+                'viber_message' => $options['viber_text'] ?? $message->getSubject(),
                 'viber_image' => $options['viber_image'] ?? null,
                 'viber_link' => $options['viber_link'] ?? null,
                 'viber_button' => $options['viber_button'] ?? null,

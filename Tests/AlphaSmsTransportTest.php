@@ -1,9 +1,9 @@
 <?php
 
 /*
- * This file is part of the Sol.parts package.
+ * This file is part of SOLPARTS
  *
- * (c) Andrii Didenko <mail@sol.parts>
+ * (c) SOLPARTS LLC (EDRPOU 46143031) <mail@sol.parts>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
@@ -17,6 +17,7 @@ use SolParts\SymfonyAlphaSmsNotifier\AlphaSmsOptions;
 use SolParts\SymfonyAlphaSmsNotifier\AlphaSmsTransport;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\JsonMockResponse;
+use Symfony\Component\Notifier\Exception\TransportException;
 use Symfony\Component\Notifier\Message\ChatMessage;
 use Symfony\Component\Notifier\Message\SentMessage;
 use Symfony\Component\Notifier\Message\SmsMessage;
@@ -123,6 +124,66 @@ final class AlphaSmsTransportTest extends TransportTestCase
         );
 
         self::assertSame('100500', self::createTransport($client)->send($message)->getMessageId());
+    }
+
+    /**
+     * A status lookup must send the client-side id — the one the transport
+     * generated or the caller passed through the options — and hand back the
+     * whole payload rather than the status string alone. `updated` is what
+     * separates a message still moving through the gateway from one frozen in
+     * the same state for hours, and that difference is the entire point of
+     * asking when an SMS never arrived.
+     */
+    public function testStatusReturnsMessagePayload(): void
+    {
+        $payload = [
+            'id' => '175743824636625',
+            'msg_id' => '1419790613',
+            'type' => 'sms',
+            'status' => 'DELIVERED',
+            'updated' => '2024-01-31T12:34:00+02:00',
+        ];
+
+        $client = new MockHttpClient(static function (string $method, string $url, array $options) use ($payload): ResponseInterface {
+            self::assertSame('POST', $method);
+            self::assertSame('https://alphasms.ua/api/json.php', $url);
+            self::assertSame([
+                'auth' => 'authKey',
+                'data' => [
+                    [
+                        'type' => 'status',
+                        'id' => 175743824636625,
+                    ],
+                ],
+            ], \json_decode((string) $options['body'], true));
+
+            return new JsonMockResponse(
+                body: ['success' => true, 'data' => [['success' => true, 'data' => $payload]]],
+                info: ['http_code' => 200],
+            );
+        });
+
+        self::assertSame($payload, self::createTransport($client)->status(175743824636625));
+    }
+
+    /**
+     * AlphaSMS reports an unknown id as success=false on the data item while
+     * the envelope itself stays success=true with HTTP 200 — the shape you get
+     * when the gateway-side msg_id is passed instead of the client-side id.
+     * Checking only the envelope would return an empty payload as if the
+     * lookup had succeeded, so the per-item flag must raise.
+     */
+    public function testStatusFailsWhenTheMessageIsUnknown(): void
+    {
+        $client = new MockHttpClient(static fn (): ResponseInterface => new JsonMockResponse(
+            body: ['success' => true, 'data' => [['success' => false, 'error' => 'Message not found']]],
+            info: ['http_code' => 200],
+        ));
+
+        $this->expectException(TransportException::class);
+        $this->expectExceptionMessageMatches('/Message not found/');
+
+        self::createTransport($client)->status(1419790613);
     }
 
     public function testSuccessfulViberSendWithSmsFallback(): void
